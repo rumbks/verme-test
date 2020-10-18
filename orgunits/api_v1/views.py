@@ -21,4 +21,18 @@ class OrganizationViewSet(TokenAuthMixin, ModelViewSet):
         Возвращает родителей запрашиваемой организации
         TODO: Написать два действия для ViewSet (parents и children), используя методы модели
         """
-        return Response()
+        organization: Organization = self.get_object()
+        parents = organization.parents()
+        serializer = self.get_serializer(parents, many=True)
+        return Response(serializer.data)
+
+    @action(methods=["GET"], detail=True)
+    def children(self, request, *args, **kwargs):
+        """
+        Возвращает родителей запрашиваемой организации
+        TODO: Написать два действия для ViewSet (parents и children), используя методы модели
+        """
+        organization: Organization = self.get_object()
+        children = organization.children()
+        serializer = self.get_serializer(children, many=True)
+        return Response(serializer.data)

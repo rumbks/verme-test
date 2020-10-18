@@ -1,9 +1,7 @@
 """
 Copyright 2020 ООО «Верме»
 """
-
 from django.db import models
-from django.db.models.expressions import RawSQL
 
 
 class OrganizationQuerySet(models.QuerySet):
@@ -14,7 +12,38 @@ class OrganizationQuerySet(models.QuerySet):
 
         :type root_org_id: int
         """
-        return self.filter()
+        # children = self.raw(f"""
+        # WITH RECURSIVE children as (
+        #     SELECT id, name, code, parent_id
+        #     FROM orgunits_organization
+        #     WHERE id={root_org_id}
+        #
+        #     UNION
+        #
+        #     SELECT orgunits_organization.id, orgunits_organization.name, orgunits_organization.code, orgunits_organization.parent_id
+        #        FROM orgunits_organization
+        #           JOIN children
+        #               ON orgunits_organization.parent_id = children.id
+        # )
+        # SELECT * FROM children;""")
+        children = self.all().extra(where=[f"""
+        orgunits_organization.id IN 
+            
+            (WITH RECURSIVE children as (
+                SELECT id
+                FROM orgunits_organization
+                WHERE id={root_org_id}
+
+                UNION
+
+                SELECT orgunits_organization.id
+                   FROM orgunits_organization
+                      JOIN children
+                          ON orgunits_organization.parent_id = children.id
+            )
+            SELECT * FROM children)"""])
+        return children
+
 
     def tree_upwards(self, child_org_id):
         """
@@ -23,7 +52,39 @@ class OrganizationQuerySet(models.QuerySet):
 
         :type child_org_id: int
         """
-        return self.filter()
+
+        # parents = self.raw(f"""
+        # WITH RECURSIVE parents as (
+        #     SELECT id, name, code, parent_id
+        #     FROM orgunits_organization
+        #     WHERE id={child_org_id}
+        #
+        #     UNION
+        #
+        #     SELECT orgunits_organization.id, orgunits_organization.name, orgunits_organization.code, orgunits_organization.parent_id
+        #        FROM orgunits_organization
+        #           JOIN parents
+        #               ON orgunits_organization.id = parents.parent_id
+        # )
+        # SELECT * FROM parents;""")
+        parents = self.all().extra(
+                where=[f"""
+        orgunits_organization.id IN 
+            (WITH RECURSIVE parents as (
+                SELECT id, parent_id
+                FROM orgunits_organization
+                WHERE id={child_org_id}
+
+                UNION
+
+                SELECT orgunits_organization.id, orgunits_organization.parent_id
+                   FROM orgunits_organization
+                      JOIN parents
+                          ON orgunits_organization.id = parents.parent_id
+            )
+            SELECT id FROM parents)"""])
+
+        return parents
 
 
 class Organization(models.Model):
@@ -49,6 +110,8 @@ class Organization(models.Model):
 
         :rtype: django.db.models.QuerySet
         """
+        upwards = Organization.objects.tree_upwards(self.id)
+        return upwards.exclude(id=self.id)
 
     def children(self):
         """
@@ -57,3 +120,8 @@ class Organization(models.Model):
 
         :rtype: django.db.models.QuerySet
         """
+        downwards = Organization.objects.tree_downwards(self.id)
+        return downwards.exclude(id=self.id)
+
+    def __str__(self):
+        return self.name
